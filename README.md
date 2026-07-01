@@ -1,145 +1,237 @@
-# ZakaFlow – Real-Time Big Data Platform for Product Analytics
+# ZakaFlow 🌊
 
-![GitHub repo size](https://img.shields.io/github/repo-size/IsaacZachary/zaka-flow)
-![GitHub license](https://img.shields.io/github/license/IsaacZachary/zaka-flow)
-![Issues](https://img.shields.io/github/issues/IsaacZachary/zaka-flow)
-![Stars](https://img.shields.io/github/stars/IsaacZachary/zaka-flow?style=social)
+> **Real-Time Big Data Pipeline & Analytics Platform**
+> Built with Kafka · Spark · Airflow · dbt · PostgreSQL · FastAPI
 
-ZakaFlow is a real-time data pipeline and analytics platform for simulating product interactions (like views, clicks, purchases), processing them at scale, and visualizing actionable insights. This modular project combines modern data engineering and DevOps practices using Kafka, Spark, Airflow, dbt, Docker, and Terraform.
-
----
-
-## 📌 Project Objectives
-- Simulate real-time user-product interactions
-- Ingest data into Kafka topics
-- Process data in real-time with Spark Streaming
-- Orchestrate batch ETL with Airflow
-- Transform and model data with dbt
-- Visualize metrics and trends with dashboards
-- Deploy infrastructure using Terraform on AWS
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](docker-compose.yml)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python)](requirements.txt)
 
 ---
 
-## 🔧 Tech Stack
+## 🏗️ Architecture
 
-| Layer        | Tools Used                                |
-|--------------|---------------------------------------------|
-| Ingestion    | Apache Kafka, Python Flask Producer         |
-| Processing   | Apache Spark (Structured Streaming)         |
-| Storage      | Hive, S3, HDFS                              |
-| Orchestration| Apache Airflow                              |
-| Modeling     | dbt, SQL                                    |
-| Dashboards   | Apache Superset, Grafana                    |
-| Infrastructure | Docker, Docker Compose, Terraform        |
-| Monitoring   | Prometheus, Grafana, ELK Stack              |
-
----
-
-## 🧱 Directory Structure
-
-```bash
-zaka-flow/
-├── README.md
-├── docker-compose.yml
-├── .gitignore
-├── requirements.txt
-├── infra/                  # Terraform infra config
-├── kafka/                 # Kafka producer and configs
-├── spark/                 # PySpark stream/batch processors
-├── airflow/               # DAGs for orchestration
-├── dbt/                   # dbt models & config
-├── dashboards/            # Superset/Grafana dashboards
-├── notebooks/             # Jupyter EDA & testing
-└── docs/                  # Architecture, diagrams, notes
+```
+[Kafka Producer (Python)]
+         │  generates product events (VIEW · CLICK · PURCHASE)
+         ▼
+[Apache Kafka]  ──── 3 topics ────────────────────────┐
+         │                                              │
+         ▼                                             │
+[Spark Structured Streaming]                          │
+         │  parses + writes to DB in real-time        │
+         ▼                                             │
+[PostgreSQL]  ◄── [Spark Batch ETL (hourly)] ◄── [Airflow DAG]
+         │
+         ▼
+[dbt Models]  (staging → marts)
+         │
+         ▼
+[FastAPI Backend]  (/api/metrics · /api/events · WebSocket)
+         │
+         ▼
+[ZakaFlow Dashboard]  (real-time UI · Vercel-deployable)
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start (Local Docker)
 
-### Prerequisites
-- Python 3.9+
-- Docker & Docker Compose
-- Git
-- Spark 3.0+
-- Terraform (for deployment)
+**Prerequisites:** Docker Desktop installed
 
-### 1. Clone the Repository
 ```bash
+# Clone
 git clone https://github.com/IsaacZachary/zaka-flow.git
 cd zaka-flow
+
+# Start everything (first run takes ~3 min to pull images)
+bash start.sh
+
+# OR manually:
+docker compose up -d --build
 ```
 
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+**Access the stack:**
 
-### 3. Start Kafka + Spark + Airflow Locally
-```bash
-docker-compose up --build
-```
-
-### 4. Simulate Real-Time Events
-```bash
-python kafka/producer.py
-```
-
-### 5. Run Spark Streaming Job
-```bash
-spark-submit spark/stream_processor.py
-```
-
-### 6. Access Airflow UI (Optional)
-Visit: [http://localhost:8081](http://localhost:8081)
+| Service | URL | Credentials |
+|---|---|---|
+| 📊 Dashboard | http://localhost:3030 | - |
+| 🔌 API | http://localhost:8000 | - |
+| ✈️ Airflow | http://localhost:8081 | admin / admin |
+| 🔥 Spark UI | http://localhost:8090 | - |
+| 🐘 PostgreSQL | localhost:5432 | zakaflow_user / zakaflow_pass_2026 |
 
 ---
 
-## 📈 Example Use Cases
-- Product analytics platform (views, clicks, purchases)
-- Real-time sales monitoring
-- ETL for e-commerce pipelines
-- Training ground for DevOps, AI/ML, and MLOps engineers
+## 📂 Project Structure
+
+```
+zaka-flow/
+├── docker-compose.yml        # Full stack orchestration
+├── start.sh                  # Quick start script
+├── requirements.txt          # Python dependencies
+│
+├── kafka/
+│   ├── producer.py           # Event simulator & Kafka producer
+│   └── topics_config.sh      # Topic creation script
+│
+├── spark/
+│   ├── stream_processor.py   # PySpark Structured Streaming
+│   └── batch_etl.py          # PySpark batch aggregation ETL
+│
+├── airflow/
+│   ├── Dockerfile            # Custom Airflow image
+│   └── dags/
+│       └── etl_pipeline.py   # Main orchestration DAG
+│
+├── dbt/
+│   ├── dbt_project.yml       # dbt project config
+│   ├── profiles.yml          # DB connection profile
+│   └── models/
+│       ├── staging/
+│       │   └── stg_events.sql
+│       └── marts/
+│           ├── product_metrics_daily.sql
+│           └── funnel_analysis.sql
+│
+├── api/
+│   ├── main.py               # FastAPI backend
+│   ├── Dockerfile            # API container
+│   └── requirements.txt      # API dependencies
+│
+├── postgres/
+│   └── init.sql              # DB schema + seed data
+│
+├── dashboards/
+│   └── index.html            # Live analytics dashboard
+│
+├── infra/                    # Terraform (AWS deployment)
+├── notebooks/                # Jupyter EDA
+└── docs/                     # Architecture diagrams
+```
 
 ---
 
-## 🌍 Cloud Deployment (Coming Soon)
-- Terraform scripts for AWS EMR + S3 + RDS
-- Kubernetes support for scaling Spark workers
+## 🔧 Running Individual Components
+
+### Start Kafka Producer
+```bash
+# Inside Docker
+docker compose exec kafka-producer python /app/kafka/producer.py
+
+# Locally (requires Kafka running)
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092 EVENTS_PER_SECOND=10 python kafka/producer.py
+```
+
+### Run Spark Streaming Job
+```bash
+spark-submit \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.postgresql:postgresql:42.7.1 \
+  spark/stream_processor.py
+```
+
+### Run Batch ETL (specific date)
+```bash
+spark-submit spark/batch_etl.py --date 2026-07-01
+```
+
+### Run dbt Models
+```bash
+cd dbt
+dbt run --profiles-dir . --target dev
+dbt test --profiles-dir .
+```
+
+### API Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/health` | Service health check |
+| `GET /api/metrics` | Live KPI metrics |
+| `GET /api/events?limit=50` | Recent events |
+| `GET /api/analytics` | Conversion funnel + top products |
+| `GET /api/pipeline` | Pipeline stage health |
+| `GET /api/kafka/topics` | Kafka topic stats |
+| `WS  /ws/events` | Live event WebSocket stream |
+
+---
+
+## 🌍 Deploy to Cloud
+
+### Dashboard → Vercel
+```bash
+# The dashboards/ folder is a static site
+vercel deploy dashboards/
+```
+
+### Full Stack → VPS (Docker)
+```bash
+# SSH into your VPS
+ssh root@your-vps-ip
+
+# Clone and start
+git clone https://github.com/IsaacZachary/zaka-flow.git
+cd zaka-flow
+docker compose up -d --build
+```
+
+### Infrastructure → AWS (Terraform)
+```bash
+cd infra
+terraform init
+terraform plan
+terraform apply
+```
+
+---
+
+## 📊 Data Models
+
+### `raw_events` (streaming sink)
+| Column | Type | Description |
+|---|---|---|
+| event_id | VARCHAR | Unique event UUID |
+| event_type | VARCHAR | VIEW / CLICK / PURCHASE |
+| product_name | VARCHAR | Product name |
+| product_category | VARCHAR | Category |
+| product_price | DECIMAL | Price in USD |
+| user_id | VARCHAR | Anonymous user ID |
+| location | VARCHAR | City, Country |
+| created_at | TIMESTAMP | Event time |
+
+### `product_metrics` (dbt mart)
+Aggregated daily metrics per product with CTR and conversion rate.
+
+### `funnel_analysis` (dbt mart)
+Daily conversion funnel: views → clicks → purchases.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Ingestion** | Apache Kafka + Python Producer |
+| **Stream Processing** | Apache Spark Structured Streaming |
+| **Batch ETL** | PySpark + Airflow |
+| **Data Modeling** | dbt (PostgreSQL) |
+| **Storage** | PostgreSQL 15 |
+| **API** | FastAPI + asyncpg |
+| **Dashboard** | Vanilla HTML/CSS/JS + Chart.js |
+| **Infrastructure** | Docker Compose + Terraform (AWS) |
+| **Monitoring** | Airflow UI + Spark UI + Custom Dashboard |
 
 ---
 
 ## 👨🏾‍💻 Author
-**Isaac Siko Zachary**  
-📫 [isaaczachary18@gmail.com](mailto:isaaczachary18@gmail.com)  
-🔗 [LinkedIn](https://linkedin.com/in/isaaczachary)  
-🌐 [izach.netlify.app](https://izach.netlify.app)
+
+**Isaac Siko Zachary** — Data Engineer
+- 📧 isaaczachary18@gmail.com
+- 🔗 [LinkedIn](https://linkedin.com/in/isaaczachary)
+- 🌐 [izach.netlify.app](https://izach.netlify.app)
 
 ---
 
 ## 📜 License
-[MIT License](LICENSE)
 
----
-
-## 🙏 Acknowledgments
-- Power Learn Project
-- Cursor AI & Lovable AI (Vibe Coding Stack)
-- First Basics Technologies
-- Open Source Contributors
-
----
-
-## 🏁 Roadmap
-- [x] Kafka + Spark setup
-- [x] Producer simulation script
-- [x] Stream processing pipeline
-- [ ] Airflow DAGs for batch ETL
-- [ ] dbt model transformation
-- [ ] Superset/Grafana dashboards
-- [ ] Terraform for AWS infra
-- [ ] Kubernetes Helm chart for deployment
-
----
-
-> ⚠️ This is an open-source personal learning project. Contributions, ideas, and PRs are welcome!
+MIT License — see [LICENSE](LICENSE)

@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: zakaflow
+    schema: zakaflow
+    tables:
+      - name: raw_events
+        description: Raw product telemetry event log from Kafka
+        columns:
+          - name: event_id
+            description: Unique UUID of the event
+            tests:
+              - unique
+              - not_null
+          - name: event_type
+            description: VIEW, CLICK, or PURCHASE
+          - name: product_id
+            description: Unique ID of the product
+          - name: product_name
+            description: Display name of the product
+          - name: product_category
+            description: Product category
+          - name: product_price
+            description: Price of the product in USD
+          - name: user_id
+            description: Anonymous user ID
+          - name: location
+            description: City and Country of the user
+          - name: session_id
+            description: Session identifier
+          - name: created_at
+            description: Timestamp of when event was ingested

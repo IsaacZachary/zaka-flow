@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ZakaFlow | Data Orchestration Dashboard</title>
+<meta name="description" content="ZakaFlow – Real-time big data pipeline platform monitoring Kafka, Spark, Airflow and PostgreSQL at scale."/>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        bg:        '#0e1511',
+        surface:   '#161d19',
+        surface2:  '#1a211d',
+        surface3:  '#242c27',
+        surface4:  '#2f3632',
+        border:    '#3c4a42',
+        border2:   '#86948a',
+        text:      '#dde4dd',
+        text2:     '#bbcabf',
+        green:     '#10b981',
+        'green-d': '#4edea3',
+        'green-x': '#6ffbbe',
+        purple:    '#a78bfa',
+        'purple-d':'#cebdff',
+        amber:     '#f59e0b',
+        red:       '#f87171',
+      },
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-size: 20px; }
+  .fill-icon { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: #0e1511; }
+  ::-webkit-scrollbar-thumb { background: #3c4a42; border-radius: 2px; }
+  .pipeline-connector {
+    background-image: linear-gradient(90deg, #10b981 50%, transparent 50%);
+    background-size: 8px 2px; background-repeat: repeat-x;
+  }
+  @keyframes flow { 0% { transform: translateX(-100%); } 100% { transform: translateX(500%); } }
+  .flow-dot { animation: flow 2.5s linear infinite; }
+  @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  .event-entry { animation: slide-in 0.25s ease-out forwards; }
+  @keyframes ping-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .pulse-dot { animation: ping-slow 1.8s ease-in-out infinite; }
+  @keyframes count-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .count-anim { animation: count-in 0.4s ease forwards; }
+  /* Nav active */
+  .nav-active { background: #1a211d; color: #10b981; border-left: 3px solid #10b981; }
+  .nav-idle { color: #bbcabf; border-left: 3px solid transparent; }
+  .nav-idle:hover { background: #1a211d; color: #dde4dd; }
+  /* View pages */
+  .view { display: none; }
+  .view.active { display: flex; flex-direction: column; gap: 16px; }
+  /* Card */
+  .card { background: #1a211d; border: 1px solid #3c4a42; border-radius: 12px; overflow: hidden; }
+  .card-header { padding: 12px 16px; border-bottom: 1px solid #3c4a42; display: flex; align-items: center; justify-content: space-between; }
+  /* Badge */
+  .badge-green  { background: rgba(16,185,129,0.12); color: #10b981; }
+  .badge-purple { background: rgba(167,139,250,0.15); color: #a78bfa; }
+  .badge-amber  { background: rgba(245,158,11,0.12);  color: #f59e0b; }
+  .badge-red    { background: rgba(248,113,113,0.12); color: #f87171; }
+  .badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; }
+  /* Status dot */
+  .dot-green  { background: #10b981; box-shadow: 0 0 5px #10b981; }
+  .dot-amber  { background: #f59e0b; box-shadow: 0 0 5px #f59e0b; }
+  .dot-red    { background: #f87171; }
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+  .data-table th { padding: 8px 14px; text-align: left; color: #86948a; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #3c4a42; font-family: 'Inter', sans-serif; }
+  .data-table td { padding: 9px 14px; border-bottom: 1px solid #242c27; }
+  .data-table tr:hover td { background: #1a211d; }
+  .data-table tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body class="bg-bg text-text flex h-screen overflow-hidden">
+
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<aside class="w-[220px] flex-shrink-0 bg-surface border-r border-border flex flex-col z-50">
+  <!-- Logo -->
+  <div class="px-4 py-5 border-b border-border flex items-center gap-3">
+    <div class="w-8 h-8 bg-green rounded-lg flex items-center justify-center flex-shrink-0">
+      <span class="material-symbols-outlined fill-icon text-bg" style="font-size:18px">account_tree</span>
+    </div>
+    <div>
+      <div class="text-base font-bold text-text leading-tight">ZakaFlow</div>
+      <div class="text-[9px] text-green font-bold uppercase tracking-widest">Data Orchestrator</div>
+    </div>
+  </div>
+  <!-- Nav -->
+  <nav class="flex-1 py-3 px-2 flex flex-col gap-0.5">
+    <button onclick="switchPage('overview')"   id="nav-overview"   class="nav-active   w-full text-left px-3 py-2.5 rounded-r flex items-center gap-3 text-[13px] font-medium transition-all">
+      <span class="material-symbols-outlined fill-icon" style="font-size:18px">dashboard</span>Overview
+    </button>
+    <button onclick="switchPage('stream')"    id="nav-stream"    class="nav-idle    w-full text-left px-3 py-2.5 rounded-r flex items-center gap-3 text-[13px] font-medium transition-all">
+      <span class="material-symbols-outlined" style="font-size:18px">live_tv</span>Live Stream
+      <span class="ml-auto badge badge-green pulse-dot" id="liveBadge">LIVE</span>
+    </button>
+    <button onclick="switchPage('pipeline')"  id="nav-pipeline"  class="nav-idle    w-full text-left px-3 py-2.5 rounded-r flex items-center gap-3 text-[13px] font-medium transition-all">
+      <span class="material-symbols-outlined" style="font-size:18px">account_tree</span>Pipeline
+    </button>
+    <button onclick="switchPage('analytics')" id="nav-analytics" class="nav-idle    w-full text-left px-3 py-2.5 rounded-r flex items-center gap-3 text-[13px] font-medium transition-all">
+      <span class="material-symbols-outlined" style="font-size:18px">analytics</span>Analytics
+    </button>
+    <button onclick="switchPage('kafka')"     id="nav-kafka"     class="nav-idle    w-full text-left px-3 py-2.5 rounded-r flex items-center gap-3 text-[13px] font-medium transition-all">
+      <span class="material-symbols-outlined" style="font-size:18px">settings_input_component</span>Kafka
+    </button>
+    <button onclick="switchPage('settings')"  id="nav-settings"  class="nav-idle    w-full text-left px-3 py-2.5 rounded-r flex items-center gap-3 text-[13px] font-medium transition-all">
+      <span class="material-symbols-outlined" style="font-size:18px">settings</span>Settings
+    </button>
+  </nav>
+  <!-- User -->
+  <div class="p-3 border-t border-border">
+    <div class="flex items-center gap-2.5 bg-surface2 rounded-lg p-2 border border-border">
+      <div class="w-8 h-8 rounded-full bg-green/20 border border-green/30 flex items-center justify-center text-green font-bold text-xs flex-shrink-0">IZ</div>
+      <div class="overflow-hidden">
+        <div class="text-xs font-bold truncate">Isaac Zachary</div>
+        <div class="text-[10px] text-text2">Data Engineer</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<div class="flex-1 flex flex-col overflow-hidden">
+  <!-- Topbar -->
+  <header class="h-14 bg-surface border-b border-border flex items-center justify-between px-5 flex-shrink-0">
+    <div class="text-base font-bold" id="pageTitle">Overview</div>
+    <div class="flex items-center gap-4">
+      <div id="apiStatus"></div>
+      <div class="flex items-center gap-1.5 px-3 py-1.5 bg-green/10 border border-green/25 rounded">
+        <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+        <span class="text-[11px] font-bold text-green uppercase tracking-wider">All Healthy</span>
+      </div>
+      <div class="text-[11px] text-text2 font-mono" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-5" id="contentWrap">
+
+    <!-- ══════════════════════════════════ -->
+    <!-- PAGE: OVERVIEW                     -->
+    <!-- ══════════════════════════════════ -->
+    <div class="view active" id="page-overview">
+
+      <!-- KPI Row -->
+      <div class="grid grid-cols-4 gap-4">
+        <!-- EPS -->
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-green"></div>
+          <div class="flex justify-between items-start mb-2">
+            <span class="text-[10px] text-text2 font-semibold uppercase tracking-widest">Events / sec</span>
+            <span class="material-symbols-outlined text-green" style="font-size:16px">bolt</span>
+          </div>
+          <div class="font-mono text-3xl font-bold text-green-d" id="kpiEPS">0</div>
+          <canvas id="spark1" class="mt-2" height="28"></canvas>
+          <div class="text-[10px] text-text2 mt-1">↑ <span class="text-green font-semibold">+12.4%</span> vs last hour</div>
+        </div>
+        <!-- Lag -->
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-green"></div>
+          <div class="flex justify-between items-start mb-2">
+            <span class="text-[10px] text-text2 font-semibold uppercase tracking-widest">Kafka Lag</span>
+            <span class="material-symbols-outlined text-green" style="font-size:16px">speed</span>
+          </div>
+          <div class="font-mono text-3xl font-bold text-green-d" id="kpiLag">0<span class="text-base text-text2 font-normal">ms</span></div>
+          <canvas id="spark2" class="mt-2" height="28"></canvas>
+          <div class="text-[10px] text-text2 mt-1"><span class="text-green font-semibold">STABLE</span> · 3 active topics</div>
+        </div>
+        <!-- Spark Jobs -->
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-purple"></div>
+          <div class="flex justify-between items-start mb-2">
+            <span class="text-[10px] text-text2 font-semibold uppercase tracking-widest">Spark Jobs</span>
+            <span class="material-symbols-outlined text-purple" style="font-size:16px">memory</span>
+          </div>
+          <div class="font-mono text-3xl font-bold text-purple-d" id="kpiJobs">12</div>
+          <canvas id="spark3" class="mt-2" height="28"></canvas>
+          <div class="text-[10px] text-text2 mt-1"><span class="text-purple font-semibold">ACTIVE</span> · 0 failed · 2 queued</div>
+        </div>
+        <!-- Health -->
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-amber"></div>
+          <div class="flex justify-between items-start mb-2">
+            <span class="text-[10px] text-text2 font-semibold uppercase tracking-widest">Pipeline Health</span>
+            <span class="material-symbols-outlined text-amber" style="font-size:16px">health_and_safety</span>
+          </div>
+          <div class="flex items-center gap-3 mt-1">
+            <svg width="52" height="52" viewBox="0 0 52 52" style="transform:rotate(-90deg)">
+              <circle cx="26" cy="26" r="21" fill="none" stroke="#242c27" stroke-width="4"/>
+              <circle cx="26" cy="21" r="21" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="131.9" stroke-dashoffset="2.3"/>
+            </svg>
+            <div>
+              <div class="font-mono text-2xl font-bold text-amber">98.4<span class="text-sm font-normal text-text2">%</span></div>
+              <div class="text-[10px] text-text2">SLA target: 99.0%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mid Bento -->
+      <div class="grid grid-cols-12 gap-4" style="height:380px">
+        <!-- Live Events -->
+        <div class="col-span-4 card flex flex-col">
+          <div class="card-header flex-shrink-0">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-text2">Live Events</span>
+            <div class="flex items-center gap-2">
+              <span class="badge badge-green font-mono" id="epsRate">-- /min</span>
+              <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto font-mono text-[11px]" id="eventFeedOverview"></div>
+        </div>
+
+        <!-- Pipeline Flow -->
+        <div class="col-span-5 card flex flex-col">
+          <div class="card-header flex-shrink-0">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-text2">Data Pipeline Flow</span>
+            <span class="badge badge-green">5/5 Healthy</span>
+          </div>
+          <div class="flex-1 flex items-center justify-between px-6 py-4">
+            <!-- nodes -->
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-12 h-12 bg-surface3 border border-border rounded-lg flex items-center justify-center text-text2 hover:border-green transition-all">
+                <span class="material-symbols-outlined">input</span>
+              </div>
+              <span class="text-[10px] font-mono text-text2">Producer</span>
+              <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+            </div>
+            <div class="flex-1 h-[2px] pipeline-connector relative mx-2 overflow-hidden">
+              <div class="absolute top-0 left-0 h-full w-2 bg-green rounded-full flow-dot"></div>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-12 h-12 bg-surface3 border border-green/40 rounded-lg flex items-center justify-center text-green hover:scale-105 transition-all">
+                <span class="material-symbols-outlined">settings_input_component</span>
+              </div>
+              <span class="text-[10px] font-mono text-text2">Kafka</span>
+              <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+            </div>
+            <div class="flex-1 h-[2px] pipeline-connector relative mx-2 overflow-hidden">
+              <div class="absolute top-0 left-0 h-full w-2 bg-green rounded-full flow-dot" style="animation-delay:-1.2s"></div>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-12 h-12 bg-surface3 border border-purple/40 rounded-lg flex items-center justify-center text-purple hover:scale-105 transition-all">
+                <span class="material-symbols-outlined">memory</span>
+              </div>
+              <span class="text-[10px] font-mono text-text2">Spark</span>
+              <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+            </div>
+            <div class="flex-1 h-[2px] pipeline-connector relative mx-2 overflow-hidden">
+              <div class="absolute top-0 left-0 h-full w-2 bg-green rounded-full flow-dot" style="animation-delay:-0.6s"></div>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-12 h-12 bg-surface3 border border-border rounded-lg flex items-center justify-center text-text2 hover:border-green transition-all">
+                <span class="material-symbols-outlined">database</span>
+              </div>
+              <span class="text-[10px] font-mono text-text2">PostgreSQL</span>
+              <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+            </div>
+            <div class="flex-1 h-[2px] pipeline-connector relative mx-2 overflow-hidden">
+              <div class="absolute top-0 left-0 h-full w-2 bg-green rounded-full flow-dot" style="animation-delay:-0.3s"></div>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-12 h-12 bg-green/15 border border-green rounded-lg flex items-center justify-center text-green">
+                <span class="material-symbols-outlined">monitoring</span>
+              </div>
+              <span class="text-[10px] font-mono text-text2">Dashboard</span>
+              <div class="w-2 h-2 rounded-full dot-green pulse-dot"></div>
+            </div>
+          </div>
+          <!-- mini stats -->
+          <div class="grid grid-cols-3 border-t border-border text-[10px] font-mono text-text2">
+            <div class="p-3 border-r border-border"><div class="text-green font-bold" id="pipeEPS">--</div><div>events/s</div></div>
+            <div class="p-3 border-r border-border"><div class="text-purple font-bold" id="pipeJobs">12</div><div>spark jobs</div></div>
+            <div class="p-3"><div class="text-amber font-bold" id="pipeRows">--</div><div>rows stored</div></div>
+          </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="col-span-3 card flex flex-col">
+          <div class="card-header flex-shrink-0">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-text2">Top Products</span>
+            <span class="badge badge-green">Live</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-3" id="topProducts"></div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid grid-cols-2 gap-4">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="text-[10px] font-bold uppercase tracking-widest text-text2">Events Over Time</div>
+            </div>
+            <div class="flex items-center gap-3 text-[10px] font-mono">
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block bg-green"></span>Views</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block bg-purple"></span>Clicks</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block bg-amber"></span>Purchases</span>
+            </div>
+          </div>
+          <div class="p-4" style="height:200px"><canvas id="timelineChart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-text2">Events by Type</span>
+            <span class="text-[10px] text-text2 font-mono">Real-time</span>
+          </div>
+          <div class="flex items-center justify-around p-4" style="height:200px">
+            <canvas id="donutChart" style="max-width:160px;max-height:160px"></canvas>
+            <div class="flex flex-col gap-3 font-mono text-[11px]">
+              <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-green"></div><div><div class="text-text font-bold">VIEWS</div><div class="text-text2" id="lgViews">0 (0%)</div></div></div>
+              <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-purple"></div><div><div class="text-text font-bold">CLICKS</div><div class="text-text2" id="lgClicks">0 (0%)</div></div></div>
+              <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-amber"></div><div><div class="text-text font-bold">PURCHASES</div><div class="text-text2" id="lgPurchases">0 (0%)</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════ -->
+    <!-- PAGE: LIVE STREAM                  -->
+    <!-- ══════════════════════════════════ -->
+    <div class="view" id="page-stream">
+      <div class="card flex flex-col" style="min-height:calc(100vh - 120px)">
+        <div class="card-header flex-shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-1.5 px-2 py-1 bg-green/10 border border-green/25 rounded">
+              <div class="w-1.5 h-1.5 rounded-full dot-green pulse-dot"></div>
+              <span class="text-[10px] font-bold text-green">CONNECTED</span>
+            </div>
+            <span class="font-bold">Live Event Stream</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="text-[12px] font-mono"><span class="text-green font-bold" id="streamRate">0</span><span class="text-text2"> /sec</span></div>
+            <select id="typeFilter" class="bg-surface3 border border-border rounded px-2 py-1 text-[11px] font-mono text-text focus:border-green focus:outline-none">
+              <option value="ALL">All Events</option>
+              <option value="VIEW">VIEW only</option>
+              <option value="CLICK">CLICK only</option>
+              <option value="PURCHASE">PURCHASE only</option>
+            </select>
+            <span class="badge badge-green font-mono" id="capturedCount">0 captured</span>
+          </div>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <table class="data-table">
+            <thead><tr>
+              <th>Type</th><th>Product</th><th>Category</th><th>User ID</th><th>Price</th><th>Location</th><th>Timestamp</th>
+            </tr></thead>
+            <tbody id="streamTableBody"></tbody>
+          </table>
+        </div>
+        <div class="border-t border-border px-4 py-2 flex items-center gap-4 text-[10px] font-mono text-text2 flex-shrink-0">
+          <span>BUFFER: 0.12ms</span>
+          <span>WORKER: flow-worker-01</span>
+          <span>PARTITIONS: 12</span>
+          <div class="ml-auto flex items-center gap-1.5"><div class="w-2 h-2 rounded-full dot-green pulse-dot"></div><span class="text-green font-bold">LIVE STREAM ACTIVE</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════ -->
+    <!-- PAGE: PIPELINE                     -->
+    <!-- ══════════════════════════════════ -->
+    <div class="view" id="page-pipeline">
+      <!-- Stage Cards -->
+      <div>
+        <div class="text-[10px] font-bold uppercase tracking-widest text-text2 mb-3">Flow Stages</div>
+        <div class="grid grid-cols-5 gap-3">
+          <div class="card p-4 text-center hover:border-green transition-all">
+            <span class="material-symbols-outlined text-green mb-2" style="font-size:28px">input</span>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1">Stage 01</div>
+            <div class="font-bold mb-2">Ingestion</div>
+            <span class="badge badge-green">● Healthy</span>
+            <div class="mt-3 text-[10px] font-mono text-text2 space-y-1">
+              <div class="flex justify-between"><span>Throughput</span><span class="text-green-d" id="stageThroughput">--</span></div>
+              <div class="flex justify-between"><span>Uptime</span><span class="text-green-d">99.9%</span></div>
+            </div>
+          </div>
+          <div class="card p-4 text-center hover:border-green transition-all">
+            <span class="material-symbols-outlined text-green mb-2" style="font-size:28px">settings_input_component</span>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1">Stage 02</div>
+            <div class="font-bold mb-2">Processing</div>
+            <span class="badge badge-green">● Healthy</span>
+            <div class="mt-3 text-[10px] font-mono text-text2 space-y-1">
+              <div class="flex justify-between"><span>CPU Load</span><span class="text-green-d">42%</span></div>
+              <div class="flex justify-between"><span>Topics</span><span class="text-green-d">3</span></div>
+            </div>
+          </div>
+          <div class="card p-4 text-center hover:border-amber transition-all border-amber/30">
+            <span class="material-symbols-outlined text-purple mb-2" style="font-size:28px">memory</span>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1">Stage 03</div>
+            <div class="font-bold mb-2">Enrichment</div>
+            <span class="badge badge-amber">⚠ Warning</span>
+            <div class="mt-3 text-[10px] font-mono text-text2 space-y-1">
+              <div class="flex justify-between"><span>Latency</span><span class="text-amber">140ms</span></div>
+              <div class="flex justify-between"><span>Jobs</span><span class="text-purple-d" id="stageJobs">12</span></div>
+            </div>
+          </div>
+          <div class="card p-4 text-center hover:border-green transition-all">
+            <span class="material-symbols-outlined text-green mb-2" style="font-size:28px">database</span>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1">Stage 04</div>
+            <div class="font-bold mb-2">Storage</div>
+            <span class="badge badge-green">● Healthy</span>
+            <div class="mt-3 text-[10px] font-mono text-text2 space-y-1">
+              <div class="flex justify-between"><span>Rows</span><span class="text-green-d" id="stageRows">--</span></div>
+              <div class="flex justify-between"><span>Commit</span><span class="text-green-d">99.9%</span></div>
+            </div>
+          </div>
+          <div class="card p-4 text-center hover:border-green transition-all">
+            <span class="material-symbols-outlined text-green mb-2" style="font-size:28px">monitoring</span>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1">Stage 05</div>
+            <div class="font-bold mb-2">Serving</div>
+            <span class="badge badge-green">● Healthy</span>
+            <div class="mt-3 text-[10px] font-mono text-text2 space-y-1">
+              <div class="flex justify-between"><span>API req/s</span><span class="text-green-d" id="stageAPI">--</span></div>
+              <div class="flex justify-between"><span>Models</span><span class="text-green-d">5</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kafka Topics -->
+      <div>
+        <div class="text-[10px] font-bold uppercase tracking-widest text-text2 mb-3">Kafka Cluster Monitoring</div>
+        <div class="grid grid-cols-3 gap-3">
+          <div class="card p-4">
+            <div class="text-green font-mono font-bold text-[12px] mb-3 flex items-center gap-2">
+              <span class="text-text2">{}</span> telemetry.raw.events
+            </div>
+            <div class="space-y-2 text-[11px] font-mono">
+              <div class="flex justify-between"><span class="text-text2">Consumer Lag</span><span class="text-green font-bold" id="t1lag">0 ms</span></div>
+              <div class="w-full h-1 bg-surface3 rounded-full"><div class="h-1 bg-green rounded-full" style="width:5%"></div></div>
+              <div class="flex justify-between text-text2"><span>Partitions: <span class="text-text" id="t1p">12</span></span><span>Replication: 3</span></div>
+              <div class="flex justify-between"><span class="text-text2">Messages</span><span class="text-green-d" id="t1msg">--</span></div>
+            </div>
+          </div>
+          <div class="card p-4">
+            <div class="text-green font-mono font-bold text-[12px] mb-3 flex items-center gap-2">
+              <span class="text-text2">{}</span> user.actions.v2
+            </div>
+            <div class="space-y-2 text-[11px] font-mono">
+              <div class="flex justify-between"><span class="text-text2">Consumer Lag</span><span class="text-green font-bold">0 ms</span></div>
+              <div class="w-full h-1 bg-surface3 rounded-full"><div class="h-1 bg-green rounded-full" style="width:3%"></div></div>
+              <div class="flex justify-between text-text2"><span>Partitions: <span class="text-text">24</span></span><span>Replication: 3</span></div>
+              <div class="flex justify-between"><span class="text-text2">Messages</span><span class="text-green-d" id="t2msg">--</span></div>
+            </div>
+          </div>
+          <div class="card p-4">
+            <div class="text-green font-mono font-bold text-[12px] mb-3 flex items-center gap-2">
+              <span class="text-text2">{}</span> billing.transactions
+            </div>
+            <div class="space-y-2 text-[11px] font-mono">
+              <div class="flex justify-between"><span class="text-text2">Consumer Lag</span><span class="text-green font-bold">0 ms</span></div>
+              <div class="w-full h-1 bg-surface3 rounded-full"><div class="h-1 bg-green rounded-full" style="width:2%"></div></div>
+              <div class="flex justify-between text-text2"><span>Partitions: <span class="text-text">8</span></span><span>Replication: 3</span></div>
+              <div class="flex justify-between"><span class="text-text2">Messages</span><span class="text-green-d" id="t3msg">--</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Airflow DAG History -->
+      <div class="card">
+        <div class="card-header">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-green" style="font-size:16px">schedule</span>
+            <span class="font-bold text-sm">Airflow DAG Execution History</span>
+          </div>
+          <span class="text-[11px] text-green font-semibold cursor-pointer hover:underline">VIEW ALL LOGS →</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>DAG ID</th><th>Run ID</th><th>Execution Date</th><th>Duration</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td class="text-green">ingest_main_cluster_metrics</td><td class="text-text2">manual__2026-07-01T06:30</td><td class="text-text2">2026-07-01 06:30:05</td><td>02m 45s</td><td><span class="badge badge-green">✓ Success</span></td><td><span class="material-symbols-outlined text-text2 cursor-pointer hover:text-green" style="font-size:16px">visibility</span></td></tr>
+            <tr><td class="text-green">daily_aggregation_user_stats</td><td class="text-text2">scheduled__2026-07-01T06:00</td><td class="text-text2">2026-07-01 06:00:12</td><td>12m 10s</td><td><span class="badge badge-green">✓ Success</span></td><td><span class="material-symbols-outlined text-text2 cursor-pointer hover:text-green" style="font-size:16px">visibility</span></td></tr>
+            <tr><td class="text-green">billing_pipeline_reconciliation</td><td class="text-text2">scheduled__2026-07-01T04:00</td><td class="text-text2">2026-07-01 04:05:40</td><td>01m 20s</td><td><span class="badge badge-red">✗ Failed</span></td><td><span class="material-symbols-outlined text-text2 cursor-pointer hover:text-green" style="font-size:16px">refresh</span></td></tr>
+            <tr><td class="text-green">cache_invalidation_services</td><td class="text-text2">manual__2026-07-01T09:15</td><td class="text-text2">2026-07-01 09:15:40</td><td>00m 30s</td><td><span class="badge badge-green">✓ Success</span></td><td><span class="material-symbols-outlined text-text2 cursor-pointer hover:text-green" style="font-size:16px">visibility</span></td></tr>
+            <tr><td class="text-green">dbt_model_refresh</td><td class="text-text2">scheduled__2026-07-01T07:00</td><td class="text-text2">2026-07-01 07:00:05</td><td>01m 05s</td><td><span class="badge badge-green">✓ Success</span></td><td><span class="material-symbols-outlined text-text2 cursor-pointer hover:text-green" style="font-size:16px">visibility</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════ -->
+    <!-- PAGE: ANALYTICS                    -->
+    <!-- ══════════════════════════════════ -->
+    <div class="view" id="page-analytics">
+      <!-- KPIs -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-green"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Total Views</div>
+          <div class="font-mono text-2xl font-bold text-green-d" id="aViews">0</div>
+          <div class="text-[10px] text-text2 mt-1">Today so far</div>
+        </div>
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-purple"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Total Clicks</div>
+          <div class="font-mono text-2xl font-bold text-purple-d" id="aClicks">0</div>
+          <div class="text-[10px] text-text2 mt-1">CTR: <span class="text-purple">34.2%</span></div>
+        </div>
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-amber"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Purchases</div>
+          <div class="font-mono text-2xl font-bold text-amber" id="aPurchases">0</div>
+          <div class="text-[10px] text-text2 mt-1">Conversion: <span class="text-amber">8.7%</span></div>
+        </div>
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-green"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Revenue</div>
+          <div class="font-mono text-2xl font-bold text-green" id="aRevenue">$0</div>
+          <div class="text-[10px] text-text2 mt-1">Avg order: <span class="text-green-d">$127.40</span></div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Funnel -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-green" style="font-size:16px">filter_alt</span>
+              <span class="font-bold text-sm">Conversion Funnel</span>
+            </div>
+            <span class="text-[10px] text-text2">CURRENT SESSION</span>
+          </div>
+          <div class="p-5 space-y-4">
+            <div>
+              <div class="flex justify-between text-[11px] font-mono mb-1.5">
+                <span class="text-text2">Total Page Views</span>
+                <span class="text-green font-bold" id="fv1">0</span>
+              </div>
+              <div class="h-9 bg-surface3 rounded overflow-hidden">
+                <div class="h-full bg-green flex items-center px-3 text-bg text-[11px] font-bold transition-all duration-1000" id="fb1" style="width:100%"><span id="fvl1">0</span></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] font-mono mb-1.5">
+                <span class="text-text2">↳ Product Clicks</span>
+                <span class="text-purple font-bold" id="fv2">0</span>
+              </div>
+              <div class="h-9 bg-surface3 rounded overflow-hidden">
+                <div class="h-full bg-purple flex items-center px-3 text-bg text-[11px] font-bold transition-all duration-1000" id="fb2" style="width:34%"><span id="fvl2">0</span></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] font-mono mb-1.5">
+                <span class="text-text2">↳ Total Purchases</span>
+                <span class="text-amber font-bold" id="fv3">0</span>
+              </div>
+              <div class="h-9 bg-surface3 rounded overflow-hidden">
+                <div class="h-full bg-amber flex items-center px-3 text-bg text-[11px] font-bold transition-all duration-1000" id="fb3" style="width:9%"><span id="fvl3">0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Category -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-green" style="font-size:16px">bar_chart</span>
+              <span class="font-bold text-sm">Category Distribution</span>
+            </div>
+          </div>
+          <div class="p-4" style="height:220px"><canvas id="categoryChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Performance Table -->
+      <div class="card">
+        <div class="card-header">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-amber" style="font-size:16px">shopping_cart</span>
+            <span class="font-bold text-sm">Product Performance Matrix</span>
+          </div>
+          <div class="flex gap-2">
+            <button class="px-3 py-1 border border-border rounded text-[11px] hover:border-green transition-colors">Export CSV</button>
+            <button class="px-3 py-1 bg-green text-bg rounded text-[11px] font-bold">Refresh</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Product Name</th><th>Category</th><th>Status</th><th>Revenue (Green)</th><th>Orders (Purple)</th><th>CTR (Amber)</th></tr></thead>
+          <tbody id="perfTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════ -->
+    <!-- PAGE: KAFKA                        -->
+    <!-- ══════════════════════════════════ -->
+    <div class="view" id="page-kafka">
+      <div class="grid grid-cols-4 gap-4">
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-green"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Total Messages</div>
+          <div class="font-mono text-2xl font-bold text-green-d" id="kafkaTotalMsg">0</div>
+          <div class="text-[10px] text-text2 mt-1">Across all topics</div>
+        </div>
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-green"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Throughput</div>
+          <div class="font-mono text-2xl font-bold text-green-d" id="kafkaThru">0</div>
+          <div class="text-[10px] text-text2 mt-1">messages / second</div>
+        </div>
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-purple"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Active Consumers</div>
+          <div class="font-mono text-2xl font-bold text-purple-d">3</div>
+          <div class="text-[10px] text-text2 mt-1">Spark consumer groups</div>
+        </div>
+        <div class="card p-4 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-[2px] bg-amber"></div>
+          <div class="text-[10px] text-text2 font-semibold uppercase tracking-widest mb-1">Avg Latency</div>
+          <div class="font-mono text-2xl font-bold text-amber">2<span class="text-sm font-normal text-text2">ms</span></div>
+          <div class="text-[10px] text-text2 mt-1">End-to-end lag</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="font-bold text-sm">Message Rate per Topic</span>
+          <span class="badge badge-green">Live</span>
+        </div>
+        <div class="p-4" style="height:220px"><canvas id="kafkaChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="font-bold text-sm">Topic Details</span></div>
+        <table class="data-table">
+          <thead><tr><th>Topic</th><th>Partitions</th><th>Total Messages</th><th>Rate /s</th><th>Consumer Lag</th><th>Retention</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="text-green">telemetry.raw.events</td><td>12</td><td id="kt1msg">--</td><td id="kt1rate">--</td><td class="text-green">0 ms</td><td>7 days</td><td><span class="badge badge-green">● Active</span></td></tr>
+            <tr><td class="text-green">user.actions.v2</td><td>24</td><td id="kt2msg">--</td><td id="kt2rate">--</td><td class="text-green">0 ms</td><td>7 days</td><td><span class="badge badge-green">● Active</span></td></tr>
+            <tr><td class="text-green">billing.transactions</td><td>8</td><td id="kt3msg">--</td><td id="kt3rate">--</td><td class="text-green">0 ms</td><td>30 days</td><td><span class="badge badge-green">● Active</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════ -->
+    <!-- PAGE: SETTINGS                     -->
+    <!-- ══════════════════════════════════ -->
+    <div class="view" id="page-settings">
+      <div class="flex items-center justify-between mb-1">
+        <div>
+          <div class="font-bold text-base">System Settings</div>
+          <div class="text-[11px] text-text2">Configure global orchestration parameters and infrastructure connections.</div>
+        </div>
+        <button class="flex items-center gap-2 px-4 py-2 bg-green text-bg rounded font-bold text-[13px] hover:opacity-90 transition-opacity">
+          <span class="material-symbols-outlined" style="font-size:16px">save</span> Save Changes
+        </button>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Kafka Config -->
+        <div class="card p-5">
+          <div class="flex items-center gap-2 mb-4 pb-3 border-b border-border">
+            <span class="material-symbols-outlined text-green" style="font-size:18px">settings_input_component</span>
+            <span class="font-bold">Kafka Configuration</span>
+          </div>
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">Bootstrap Servers</div>
+                <input class="w-full bg-surface3 border border-border rounded px-3 py-2 text-[12px] font-mono focus:border-green focus:outline-none" value="broker-1.prod.zakaflow"/>
+              </div>
+              <div>
+                <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">Client ID</div>
+                <input class="w-full bg-surface3 border border-border rounded px-3 py-2 text-[12px] font-mono focus:border-green focus:outline-none" value="zf-orchestrator-alpha"/>
+              </div>
+            </div>
+            <div>
+              <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">Security Protocol</div>
+              <div class="grid grid-cols-3 gap-1 bg-surface3 rounded p-1">
+                <button class="bg-green text-bg rounded py-1.5 text-[11px] font-bold">SASL_SSL</button>
+                <button class="text-text2 text-[11px] hover:text-text transition-colors">PLAINTEXT</button>
+                <button class="text-text2 text-[11px] hover:text-text transition-colors">SSL</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">SASL Secret Key</div>
+              <div class="relative">
+                <input type="password" class="w-full bg-surface3 border border-border rounded px-3 py-2 text-[12px] font-mono focus:border-green focus:outline-none" value="supersecretkey123"/>
+                <span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-text2 cursor-pointer hover:text-green" style="font-size:16px">visibility</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Display & Sync -->
+        <div class="space-y-4">
+          <div class="card p-5">
+            <div class="flex items-center gap-2 mb-4 pb-3 border-b border-border">
+              <span class="material-symbols-outlined text-green" style="font-size:18px">monitor</span>
+              <span class="font-bold">Display & UI</span>
+            </div>
+            <div class="space-y-3 text-[12px]">
+              <div class="flex justify-between items-center">
+                <div><div class="font-medium">Telemetry Refresh Rate</div></div>
+                <div class="flex gap-1 bg-surface3 rounded p-0.5">
+                  <button class="px-2 py-1 text-[10px] text-text2 hover:text-text">1s</button>
+                  <button class="px-2 py-1 text-[10px] bg-green text-bg rounded font-bold">5s</button>
+                  <button class="px-2 py-1 text-[10px] text-text2 hover:text-text">10s</button>
+                </div>
+              </div>
+              <div class="flex justify-between items-center py-1 border-t border-border">
+                <div><div class="font-medium">Compact View</div><div class="text-[10px] text-text2">Maximize data density</div></div>
+                <div class="w-10 h-5 bg-surface3 border border-border rounded-full relative cursor-pointer">
+                  <div class="w-4 h-4 rounded-full bg-text2 absolute top-0.5 left-0.5 transition-all"></div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center py-1 border-t border-border">
+                <div><div class="font-medium">Syntax Highlighting</div><div class="text-[10px] text-text2">Colorize Kafka log payloads</div></div>
+                <div class="w-10 h-5 bg-green rounded-full relative cursor-pointer">
+                  <div class="w-4 h-4 rounded-full bg-bg absolute top-0.5 right-0.5 transition-all"></div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center py-1 border-t border-border">
+                <div><div class="font-medium">Auto-save Drafts</div><div class="text-[10px] text-text2">Background sync pipeline changes</div></div>
+                <div class="w-10 h-5 bg-green rounded-full relative cursor-pointer">
+                  <div class="w-4 h-4 rounded-full bg-bg absolute top-0.5 right-0.5 transition-all"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card p-5 border-green/30">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-bold text-green">Sync Engine</span>
+              <span class="material-symbols-outlined text-green" style="font-size:18px">cloud_sync</span>
+            </div>
+            <div class="text-[11px] text-text2 mb-3">Last configuration push was 4 minutes ago by system_admin. All 12 nodes reported successful ingestion.</div>
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full bg-green text-bg flex items-center justify-center text-[10px] font-bold">A</div>
+              <div class="w-6 h-6 rounded-full bg-purple text-bg flex items-center justify-center text-[10px] font-bold">B</div>
+              <div class="w-6 h-6 rounded-full bg-amber text-bg flex items-center justify-center text-[10px] font-bold">C</div>
+              <span class="text-[10px] text-text2">Active Agents</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- PostgreSQL -->
+      <div class="card p-5">
+        <div class="flex items-center gap-2 mb-4 pb-3 border-b border-border">
+          <span class="material-symbols-outlined text-green" style="font-size:18px">database</span>
+          <span class="font-bold">PostgreSQL Backend</span>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">Host Address</div>
+            <input class="w-full bg-surface3 border border-border rounded px-3 py-2 text-[12px] font-mono focus:border-green focus:outline-none" value="db.cloud.internal"/>
+          </div>
+          <div>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">Port</div>
+            <input class="w-full bg-surface3 border border-border rounded px-3 py-2 text-[12px] font-mono focus:border-green focus:outline-none" value="5432"/>
+          </div>
+          <div>
+            <div class="text-[10px] text-text2 uppercase tracking-widest mb-1.5">Database Username</div>
+            <input class="w-full bg-surface3 border border-border rounded px-3 py-2 text-[12px] font-mono focus:border-green focus:outline-none" value="admin_orchestrator"/>
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-between items-center text-[10px] font-mono text-text2">
+        <div class="flex gap-4"><span>IP: 62.171.151.208</span><span>Node: us-east-master-01</span></div>
+        <div class="flex gap-4">
+          <button class="hover:text-text transition-colors">Reset to Default</button>
+          <button class="hover:text-red transition-colors">Wipe Persistent Data</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /contentWrap -->
+</div><!-- /main -->
+
+<script>
+// ══════════════════════════════════════════════════════
+// DATA SIMULATION ENGINE
+// ══════════════════════════════════════════════════════
+
+const PRODUCTS = [
+  { name:'Neural Engine Pro',    cat:'Infrastructure', price:412, sku:'NEP-9012' },
+  { name:'Quantum Flow Hub',     cat:'Cloud Services', price:284, sku:'QFH-4412' },
+  { name:'Stream-Sentry Max',    cat:'Security',       price:152, sku:'SSM-0031' },
+  { name:'Void-Shield Firewall', cat:'Security',       price:98,  sku:'VSF-9882' },
+  { name:'Echo-Sync Gateway',    cat:'Networking',     price:67,  sku:'ESG-7721' },
+  { name:'Quantum Sorter',       cat:'Infrastructure', price:286, sku:'QS-1001'  },
+  { name:'Vector DB Pro',        cat:'Infrastructure', price:293, sku:'VDP-2021' },
+  { name:'Graph Connector',      cat:'Networking',     price:174, sku:'GC-3345'  },
+  { name:'DevOps Toolkit',       cat:'Cloud Services', price:199, sku:'DOT-5566' },
+  { name:'ZakaFlow Core',        cat:'AI/ML Ops',      price:438, sku:'ZFC-0001' },
+  { name:'Schema Guard',         cat:'Security',       price:251, sku:'SG-8821'  },
+  { name:'StreamEdge Node',      cat:'Networking',     price:344, sku:'SEN-4451' },
+];
+
+const LOCATIONS = ['San Francisco, US','Berlin, DE','Singapore, SG','London, UK','Sydney, AU','Tokyo, JP','Dubai, AE','Nairobi, KE','Lagos, NG','Johannesburg, ZA'];
+const EVENT_TYPES = ['VIEW','VIEW','VIEW','CLICK','CLICK','PURCHASE'];
+
+const S = {
+  events: [], views: 0, clicks: 0, purchases: 0,
+  revenue: 0, dbRows: 0,
+  topicMsg: [0, 0, 0],
+  productCounts: {},
+  timelineV: [], timelineC: [], timelineP: [], timelineL: [],
+  kafkaHistory: [],
+  eps: 0,
+};
+
+const r = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+const pick = a => a[r(0, a.length - 1)];
+const fmt = n => n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'k' : n;
+const fmtFull = n => n.toLocaleString();
+const pct = (a, b) => b === 0 ? 0 : Math.round((a / b) * 100);
+
+function genEvent() {
+  const type = pick(EVENT_TYPES);
+  const product = pick(PRODUCTS);
+  return {
+    type, product,
+    userId: `usr_${Math.random().toString(36).substr(2,8)}`,
+    location: pick(LOCATIONS),
+    time: new Date().toTimeString().slice(0, 8),
+    ts: Date.now(),
+  };
+}
+
+// ══════════════════════════════════════════════════════
+// CHARTS
+// ══════════════════════════════════════════════════════
+
+Chart.defaults.color = '#86948a';
+Chart.defaults.borderColor = '#3c4a42';
+
+let timelineChart, donutChart, categoryChart, kafkaChart;
+let sp1d=[], sp2d=[], sp3d=[];
+
+function initCharts() {
+  const common = { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+    plugins: { legend: { display: false }, tooltip: {
+      backgroundColor: '#1a211d', borderColor: '#3c4a42', borderWidth: 1,
+      titleColor: '#dde4dd', bodyColor: '#bbcabf',
+    }}
+  };
+
+  timelineChart = new Chart(document.getElementById('timelineChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label:'Views',    data:[], borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.07)', tension:0.4, fill:true, pointRadius:0, borderWidth:2 },
+        { label:'Clicks',   data:[], borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,0.07)', tension:0.4, fill:true, pointRadius:0, borderWidth:2 },
+        { label:'Purchases',data:[], borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,0.07)',  tension:0.4, fill:true, pointRadius:0, borderWidth:2 },
+      ]
+    },
+    options: { ...common, scales: {
+      x: { ticks:{ maxTicksLimit:6, font:{size:10,family:'JetBrains Mono'} } },
+      y: { ticks:{ font:{size:10,family:'JetBrains Mono'} } }
+    }}
+  });
+
+  donutChart = new Chart(document.getElementById('donutChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Views','Clicks','Purchases'],
+      datasets: [{ data:[0,0,0], backgroundColor:['#10b981','#a78bfa','#f59e0b'], borderColor:'#0e1511', borderWidth:3, hoverOffset:6 }]
+    },
+    options: { ...common, cutout:'65%', plugins:{ legend:{ display:false } } }
+  });
+
+  categoryChart = new Chart(document.getElementById('categoryChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Infrastructure','Cloud Services','Security','Networking','AI/ML Ops'],
+      datasets: [
+        { label:'Views',     data:[0,0,0,0,0], backgroundColor:'rgba(16,185,129,0.75)',  borderRadius:4 },
+        { label:'Purchases', data:[0,0,0,0,0], backgroundColor:'rgba(245,158,11,0.75)',  borderRadius:4 },
+      ]
+    },
+    options: { ...common, plugins:{ legend:{ display:true, labels:{ color:'#86948a', boxWidth:10, font:{size:10} } } },
+      scales: { x:{ ticks:{ font:{size:10} } }, y:{ ticks:{ font:{size:10,family:'JetBrains Mono'} } } }
+    }
+  });
+
+  kafkaChart = new Chart(document.getElementById('kafkaChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label:'telemetry.raw.events', data:[], borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.05)', tension:0.4, fill:true, pointRadius:0, borderWidth:2 },
+        { label:'user.actions.v2',     data:[], borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,0.05)', tension:0.4, fill:true, pointRadius:0, borderWidth:2 },
+        { label:'billing.transactions',data:[], borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,0.05)',  tension:0.4, fill:true, pointRadius:0, borderWidth:2 },
+      ]
+    },
+    options: { ...common, plugins:{ legend:{ display:true, labels:{ color:'#86948a', boxWidth:10, font:{size:10} } } },
+      scales: { x:{ ticks:{ maxTicksLimit:6, font:{size:10,family:'JetBrains Mono'} } }, y:{ ticks:{ font:{size:10,family:'JetBrains Mono'} } } }
+    }
+  });
+}
+
+function drawSparkline(id, data, color) {
+  const c = document.getElementById(id);
+  if (!c) return;
+  const w = c.offsetWidth || 200; const h = 28;
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,w,h);
+  if (data.length < 2) return;
+  const max = Math.max(...data) || 1, min = Math.min(...data);
+  const pts = data.map((v,i) => ({ x:(i/(data.length-1))*w, y:h-((v-min)/(max-min||1))*(h-4)-2 }));
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0, color+'30'); g.addColorStop(1,'transparent');
+  ctx.beginPath(); ctx.moveTo(pts[0].x,h);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x,h); ctx.closePath();
+  ctx.fillStyle=g; ctx.fill();
+  ctx.beginPath(); pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+// ══════════════════════════════════════════════════════
+// TICK / SIMULATION
+// ══════════════════════════════════════════════════════
+
+const catIdx = {'Infrastructure':0,'Cloud Services':1,'Security':2,'Networking':3,'AI/ML Ops':4};
+
+function tick() {
+  const n = r(3, 9);
+  let bv=0, bc=0, bp=0;
+
+  for (let i=0;i<n;i++) {
+    const ev = genEvent();
+    S.events.unshift(ev);
+    if (S.events.length>300) S.events.pop();
+    S.dbRows++;
+    S.topicMsg[0]++;
+    if (ev.type==='VIEW')     { S.views++;     bv++; S.topicMsg[0]++; }
+    else if (ev.type==='CLICK')    { S.clicks++;    bc++; S.topicMsg[1]++; }
+    else if (ev.type==='PURCHASE') { S.purchases++; bp++; S.topicMsg[2]++; S.revenue += ev.product.price; }
+    S.productCounts[ev.product.name] = (S.productCounts[ev.product.name]||0)+1;
+  }
+
+  S.eps = Math.round(n / 0.8);
+  sp1d.push(S.eps); if(sp1d.length>30) sp1d.shift();
+  sp2d.push(r(0,3));  if(sp2d.length>30) sp2d.shift();
+  sp3d.push(r(11,14)); if(sp3d.length>30) sp3d.shift();
+
+  const lbl = new Date().toLocaleTimeString('en',{hour12:false}).slice(0,8);
+  S.timelineL.push(lbl); S.timelineV.push(bv); S.timelineC.push(bc); S.timelineP.push(bp);
+  if(S.timelineL.length>40){ S.timelineL.shift(); S.timelineV.shift(); S.timelineC.shift(); S.timelineP.shift(); }
+
+  S.kafkaHistory.push({ v:bv*r(8,18), c:bc*r(5,12), p:bp });
+  if(S.kafkaHistory.length>40) S.kafkaHistory.shift();
+
+  render();
+}
+
+// ══════════════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════════════
+
+function setText(id, val) { const el=document.getElementById(id); if(el) el.textContent=val; }
+function setHTML(id, val) { const el=document.getElementById(id); if(el) el.innerHTML=val; }
+
+const typeBadge = t => ({
+  VIEW:     '<span class="badge badge-green">VIEW</span>',
+  CLICK:    '<span class="badge badge-purple">CLICK</span>',
+  PURCHASE: '<span class="badge badge-amber">PURCHASE</span>',
+}[t]||t);
+
+function render() {
+  // ── KPIs ──
+  setText('kpiEPS', fmtFull(S.eps));
+  setHTML('kpiLag', `${r(0,2)}<span class="text-base text-text2 font-normal">ms</span>`);
+  setText('kpiJobs', r(11,14));
+  setText('epsRate', `${fmtFull(S.eps*60)}/min`);
+
+  // ── Sparklines ──
+  drawSparkline('spark1', sp1d, '#10b981');
+  drawSparkline('spark2', sp2d, '#10b981');
+  drawSparkline('spark3', sp3d, '#a78bfa');
+
+  // ── Event Feed (overview) ──
+  const feed = document.getElementById('eventFeedOverview');
+  if(feed) {
+    feed.innerHTML = S.events.slice(0,18).map((ev,i) => `
+      <div class="event-entry flex items-center gap-2 px-3 py-2 border-b border-[#242c27] ${i===0?'bg-green/5':''}">
+        ${typeBadge(ev.type)}
+        <span class="flex-1 text-[11px] font-mono text-text truncate">${ev.product.name}</span>
+        ${ev.type==='PURCHASE'?`<span class="text-amber text-[10px] font-mono font-bold">$${ev.product.price}</span>`:''}
+        <span class="text-text2 text-[10px] font-mono">${ev.time}</span>
+      </div>`).join('');
+  }
+
+  // ── Top Products ──
+  const sorted = Object.entries(S.productCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxC = sorted[0]?.[1]||1;
+  setHTML('topProducts', sorted.map(([name,cnt],i)=>`
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-text2 w-4 font-mono">${i+1}</span>
+      <div class="flex-1 min-w-0">
+        <div class="text-[11px] font-semibold truncate">${name}</div>
+        <div class="mt-1 h-1 bg-surface3 rounded-full overflow-hidden">
+          <div class="h-full bg-green rounded-full" style="width:${Math.round((cnt/maxC)*100)}%"></div>
+        </div>
+      </div>
+      <span class="text-green text-[11px] font-mono font-bold">${fmtFull(cnt)}</span>
+    </div>`).join(''));
+
+  // ── Pipeline mini stats ──
+  setText('pipeEPS', S.eps);
+  setText('pipeJobs', r(11,14));
+  setText('pipeRows', fmt(S.dbRows));
+
+  // ── Timeline chart ──
+  timelineChart.data.labels = S.timelineL;
+  timelineChart.data.datasets[0].data = S.timelineV;
+  timelineChart.data.datasets[1].data = S.timelineC;
+  timelineChart.data.datasets[2].data = S.timelineP;
+  timelineChart.update('none');
+
+  // ── Donut ──
+  donutChart.data.datasets[0].data = [S.views, S.clicks, S.purchases];
+  donutChart.update('none');
+  const tot = S.views+S.clicks+S.purchases||1;
+  setText('lgViews', `${fmtFull(S.views)} (${pct(S.views,tot)}%)`);
+  setText('lgClicks', `${fmtFull(S.clicks)} (${pct(S.clicks,tot)}%)`);
+  setText('lgPurchases', `${fmtFull(S.purchases)} (${pct(S.purchases,tot)}%)`);
+
+  // ── Category chart ──
+  const cv=[0,0,0,0,0], cp=[0,0,0,0,0];
+  S.events.slice(0,80).forEach(ev => {
+    const ci = catIdx[ev.product.cat]??0;
+    if(ev.type==='VIEW') cv[ci]++;
+    if(ev.type==='PURCHASE') cp[ci]++;
+  });
+  categoryChart.data.datasets[0].data = cv;
+  categoryChart.data.datasets[1].data = cp;
+  categoryChart.update('none');
+
+  // ── Kafka chart ──
+  kafkaChart.data.labels = S.kafkaHistory.map((_,i)=>i);
+  kafkaChart.data.datasets[0].data = S.kafkaHistory.map(h=>h.v);
+  kafkaChart.data.datasets[1].data = S.kafkaHistory.map(h=>h.c);
+  kafkaChart.data.datasets[2].data = S.kafkaHistory.map(h=>h.p);
+  kafkaChart.update('none');
+
+  // ── Topic counts ──
+  const [m1,m2,m3] = S.topicMsg;
+  setText('t1msg', fmtFull(m1)); setText('t2msg', fmtFull(m2)); setText('t3msg', fmtFull(m3));
+  setText('kt1msg', fmtFull(m1)); setText('kt2msg', fmtFull(m2)); setText('kt3msg', fmtFull(m3));
+  setText('kt1rate', r(40,80)); setText('kt2rate', r(15,30)); setText('kt3rate', r(3,8));
+  setText('kafkaTotalMsg', fmtFull(m1+m2+m3));
+  setText('kafkaThru', S.eps);
+
+  // ── Pipeline stages ──
+  setText('stageThroughput', `${S.eps}/s`);
+  setText('stageJobs', r(11,14));
+  setText('stageRows', fmt(S.dbRows));
+  setText('stageAPI', r(80,160));
+
+  // ── Analytics ──
+  setText('aViews', fmtFull(S.views));
+  setText('aClicks', fmtFull(S.clicks));
+  setText('aPurchases', fmtFull(S.purchases));
+  setText('aRevenue', '$'+fmtFull(S.revenue));
+
+  // funnel
+  setText('fv1', fmtFull(S.views)); setText('fvl1', fmtFull(S.views));
+  setText('fv2', fmtFull(S.clicks)); setText('fvl2', fmtFull(S.clicks));
+  setText('fv3', fmtFull(S.purchases)); setText('fvl3', fmtFull(S.purchases));
+  const vv = S.views||1;
+  document.getElementById('fb2').style.width = Math.max(2, pct(S.clicks,vv))+'%';
+  document.getElementById('fb3').style.width = Math.max(1, pct(S.purchases,vv))+'%';
+
+  // perf table
+  const perfRows = sorted.slice(0,8).map(([name,cnt],i)=>{
+    const pr = PRODUCTS.find(p=>p.name===name);
+    const orders = Math.round(cnt*0.15); const rev = orders*(pr?.price||0);
+    const ctr = (8+Math.random()*8).toFixed(2);
+    return `<tr>
+      <td class="text-text2">${i+1}</td>
+      <td><div class="font-semibold">${name}</div><div class="text-text2 text-[10px]">SKU: ${pr?.sku||'--'}</div></td>
+      <td><span class="badge" style="background:rgba(255,255,255,0.06);color:#bbcabf">${pr?.cat||''}</span></td>
+      <td><span class="badge badge-green">Active</span></td>
+      <td class="text-green font-bold">$${fmtFull(rev)}.00</td>
+      <td class="text-purple">${fmtFull(orders)}</td>
+      <td class="text-amber">${ctr}%</td>
+    </tr>`;
+  }).join('');
+  setHTML('perfTableBody', perfRows);
+
+  // ── Live stream table ──
+  const filter = document.getElementById('typeFilter')?.value||'ALL';
+  const filtered = filter==='ALL' ? S.events : S.events.filter(e=>e.type===filter);
+  setText('streamRate', S.eps);
+  setText('capturedCount', `${fmtFull(S.views+S.clicks+S.purchases)} captured`);
+  const rows = filtered.slice(0,120).map(ev=>`
+    <tr>
+      <td>${typeBadge(ev.type)}</td>
+      <td class="font-semibold text-text">${ev.product.name}</td>
+      <td><span class="text-[10px]" style="background:rgba(255,255,255,0.06);padding:2px 7px;border-radius:4px">${ev.product.cat}</span></td>
+      <td class="text-text2">${ev.userId}</td>
+      <td class="text-amber">${ev.type==='PURCHASE'?'$'+ev.product.price:'-'}</td>
+      <td class="text-text2 text-[11px]">${ev.location}</td>
+      <td class="text-text2">${ev.time}</td>
+    </tr>`).join('');
+  setHTML('streamTableBody', rows);
+}
+
+// ══════════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════════
+
+const PAGE_TITLES = {
+  overview: 'Overview', stream: 'Live Stream',
+  pipeline: 'Pipeline Monitor', analytics: 'Analytics',
+  kafka: 'Kafka Topics', settings: 'Settings',
+};
+
+function switchPage(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(`page-${name}`).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => {
+    b.classList.remove('nav-active'); b.classList.add('nav-idle');
+  });
+  const nb = document.getElementById(`nav-${name}`);
+  if(nb) { nb.classList.add('nav-active'); nb.classList.remove('nav-idle'); }
+  setText('pageTitle', PAGE_TITLES[name]||name);
+  document.getElementById('contentWrap').scrollTop = 0;
+}
+
+// ══════════════════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════════════════
+
+setInterval(()=>{ setText('clock', new Date().toLocaleTimeString('en',{hour12:false})); }, 1000);
+
+// ══════════════════════════════════════════════════════
+// BOOT & API CONNECTION
+// ══════════════════════════════════════════════════════
+
+const API_URL = window.ZAKAFLOW_API_URL || 'http://localhost:8000';
+let apiConnected = false;
+let wsConnection = null;
+
+async function tryApiConnect() {
+  try {
+    const res = await fetch(`${API_URL}/api/health`);
+    if (res.ok) {
+      apiConnected = true;
+      setHTML('apiStatus', `<span class="flex items-center gap-1.5 px-2 py-1 bg-green/10 border border-green/25 rounded text-[10px] font-bold text-green">● API LIVE</span>`);
+      connectWebSocket();
+      startApiPolling();
+      console.log('[ZakaFlow] Connected to real API at', API_URL);
+    }
+  } catch {
+    apiConnected = false;
+    setHTML('apiStatus', `<span class="flex items-center gap-1.5 px-2 py-1 bg-surface3 border border-border rounded text-[10px] text-text2">◌ SIMULATION</span>`);
+  }
+}
+
+function connectWebSocket() {
+  try {
+    if (wsConnection) {
+      wsConnection.close();
+    }
+    const wsUrl = API_URL.replace('http','ws') + '/ws/events';
+    wsConnection = new WebSocket(wsUrl);
+    wsConnection.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      const event = {
+        type: ev.event_type,
+        product: { name: ev.product_name, cat: ev.product_category, price: ev.product_price },
+        userId: ev.user_id,
+        location: ev.location,
+        time: new Date(ev.timestamp).toTimeString().slice(0,8),
+      };
+      S.events.unshift(event);
+      if(S.events.length > 300) S.events.pop();
+      if(ev.event_type==='VIEW')     S.views++;
+      if(ev.event_type==='CLICK')    S.clicks++;
+      if(ev.event_type==='PURCHASE') { S.purchases++; S.revenue += ev.product_price||0; }
+      S.productCounts[ev.product_name] = (S.productCounts[ev.product_name]||0)+1;
+      S.dbRows++;
+    };
+    wsConnection.onclose = () => {
+      console.log('[ZakaFlow] WebSocket closed, retrying in 5s...');
+      setTimeout(connectWebSocket, 5000);
+    };
+  } catch(e) { console.warn('[ZakaFlow] WebSocket failed:', e); }
+}
+
+function startApiPolling() {
+  setInterval(async () => {
+    if (!apiConnected) return;
+    try {
+      const m = await fetch(`${API_URL}/api/metrics`).then(r=>r.json());
+      if (m) {
+        S.eps = m.events_per_sec || S.eps;
+        S.views = m.total_views || S.views;
+        S.clicks = m.total_clicks || S.clicks;
+        S.purchases = m.total_purchases || S.purchases;
+        S.revenue = m.total_revenue || S.revenue;
+        S.dbRows = m.db_rows || S.dbRows;
+      }
+    } catch(e) {}
+  }, 3000);
+}
+
+window.addEventListener('load', () => {
+  initCharts();
+  for(let i=0;i<25;i++) tick();   // seed data
+  setInterval(tick, 800);          // live updates every 800ms
+  
+  // Try connecting to real API
+  setTimeout(tryApiConnect, 1000);
+});
+</script>
+</body>
+</html>

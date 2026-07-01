@@ -1,0 +1,268 @@
+version: "3.8"
+
+networks:
+  zakaflow-net:
+    driver: bridge
+
+volumes:
+  zakaflow_postgres_data:
+  airflow_logs:
+
+services:
+
+  # ─────────────────────────────────────────────
+  # ZOOKEEPER
+  # ─────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zakaflow-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # KAFKA
+  # ─────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: zakaflow-kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # KAFKA TOPIC INITIALISER
+  # ─────────────────────────────────────────────
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: zakaflow-kafka-init
+    depends_on:
+      - kafka
+    entrypoint: [ "/bin/bash", "-c" ]
+    command:
+      - |
+        sleep 10 &&
+        kafka-topics --create --if-not-exists \
+          --bootstrap-server kafka:9092 \
+          --replication-factor 1 --partitions 3 \
+          --topic product-events &&
+        kafka-topics --create --if-not-exists \
+          --bootstrap-server kafka:9092 \
+          --replication-factor 1 --partitions 3 \
+          --topic product-clicks &&
+        kafka-topics --create --if-not-exists \
+          --bootstrap-server kafka:9092 \
+          --replication-factor 1 --partitions 1 \
+          --topic product-purchases &&
+        echo "Topics created"
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # POSTGRES
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: zakaflow-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: zakaflow
+      POSTGRES_USER: zakaflow_user
+      POSTGRES_PASSWORD: zakaflow_pass_2026
+    volumes:
+      - zakaflow_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - zakaflow-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zakaflow_user -d zakaflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # SPARK MASTER
+  # ─────────────────────────────────────────────
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: zakaflow-spark-master
+    restart: unless-stopped
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    ports:
+      - "8090:8080"
+      - "7077:7077"
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # SPARK WORKER
+  # ─────────────────────────────────────────────
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: zakaflow-spark-worker
+    restart: unless-stopped
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_CORES: 2
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # AIRFLOW – DB MIGRATION + ADMIN USER CREATION
+  # ─────────────────────────────────────────────
+  airflow-init:
+    build:
+      context: ./airflow
+    container_name: zakaflow-airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://zakaflow_user:zakaflow_pass_2026@postgres/zakaflow
+      AIRFLOW__CORE__FERNET_KEY: 46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe-84=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create
+          --username admin
+          --password admin
+          --firstname Admin
+          --lastname User
+          --role Admin
+          --email admin@zakaflow.com
+      "
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./spark:/opt/airflow/spark
+      - ./dbt:/opt/airflow/dbt
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # AIRFLOW WEBSERVER
+  # ─────────────────────────────────────────────
+  airflow-webserver:
+    build:
+      context: ./airflow
+    container_name: zakaflow-airflow-webserver
+    restart: unless-stopped
+    depends_on:
+      - airflow-init
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://zakaflow_user:zakaflow_pass_2026@postgres/zakaflow
+      AIRFLOW__CORE__FERNET_KEY: 46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe-84=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    command: webserver
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./spark:/opt/airflow/spark
+      - ./dbt:/opt/airflow/dbt
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # AIRFLOW SCHEDULER
+  # ─────────────────────────────────────────────
+  airflow-scheduler:
+    build:
+      context: ./airflow
+    container_name: zakaflow-airflow-scheduler
+    restart: unless-stopped
+    depends_on:
+      - airflow-init
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://zakaflow_user:zakaflow_pass_2026@postgres/zakaflow
+      AIRFLOW__CORE__FERNET_KEY: 46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe-84=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    command: scheduler
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./spark:/opt/airflow/spark
+      - ./dbt:/opt/airflow/dbt
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # FASTAPI / PYTHON API
+  # ─────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+    container_name: zakaflow-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://zakaflow_user:zakaflow_pass_2026@postgres/zakaflow
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    networks:
+      - zakaflow-net
+
+  # ─────────────────────────────────────────────
+  # NGINX DASHBOARD
+  # ─────────────────────────────────────────────
+  dashboard:
+    image: nginx:alpine
+    container_name: zakaflow-dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3030:80"
+    volumes:
+      - ./dashboards:/usr/share/nginx/html:ro
+    networks:
+      - zakaflow-net

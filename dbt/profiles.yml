@@ -1,0 +1,13 @@
+zakaflow:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'postgres') }}"
+      port: 5432
+      user: "{{ env_var('DBT_USER', 'zakaflow_user') }}"
+      password: "{{ env_var('DBT_PASSWORD', 'zakaflow_pass_2026') }}"
+      dbname: "{{ env_var('DBT_DBNAME', 'zakaflow') }}"
+      schema: public
+      threads: 4
+      connect_timeout: 10
